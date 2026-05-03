@@ -1,11 +1,13 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { User, Donor, Hospital } = require('../database/models');
+const User = require('../models/User');
+const Donor = require('../models/Donor');
+const Hospital = require('../models/Hospital');
 
 // Simple token generator
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
+    { id: user._id, email: user.email, role: user.role },
     process.env.JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -16,8 +18,20 @@ const register = async (req, res) => {
   try {
     const { name, email, password, role, phone, ...additionalData } = req.body;
 
+    if (!['donor', 'hospital'].includes(role)) {
+      return res.status(400).json({ message: 'Registration is only available for donor and hospital accounts' });
+    }
+
+    if (role === 'donor' && !additionalData.blood_type) {
+      return res.status(400).json({ message: 'Donor registration requires a blood type' });
+    }
+
+    if (role === 'hospital' && !additionalData.hospital_name) {
+      return res.status(400).json({ message: 'Hospital registration requires a hospital name' });
+    }
+
     // Check if user exists
-    const existingUser = await User.findOne({ where: { email } });
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -36,17 +50,26 @@ const register = async (req, res) => {
 
     // Create role profile
     if (role === 'donor') {
-      await Donor.create({ user_id: user.id, ...additionalData });
+      await Donor.create({ user_id: user._id, ...additionalData });
     } else if (role === 'hospital') {
-      await Hospital.create({ user_id: user.id, ...additionalData });
+      await Hospital.create({ user_id: user._id, ...additionalData });
     }
 
     const token = generateToken(user);
 
+    // Get role-specific profile
+    const userData = { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone };
+
+    if (role === 'donor') {
+      userData.Donor = await Donor.findOne({ user_id: user._id });
+    } else if (role === 'hospital') {
+      userData.Hospital = await Hospital.findOne({ user_id: user._id });
+    }
+
     res.status(201).json({
       message: 'User registered successfully',
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role }
+      user: userData
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -59,7 +82,7 @@ const login = async (req, res) => {
     const { email, password } = req.body;
 
     // Find user
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -72,10 +95,19 @@ const login = async (req, res) => {
 
     const token = generateToken(user);
 
+    // Get role-specific profile
+    const userData = { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone };
+
+    if (user.role === 'donor') {
+      userData.Donor = await Donor.findOne({ user_id: user._id });
+    } else if (user.role === 'hospital') {
+      userData.Hospital = await Hospital.findOne({ user_id: user._id });
+    }
+
     res.json({
       message: 'Login successful',
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role }
+      user: userData
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -85,19 +117,21 @@ const login = async (req, res) => {
 // Get user profile
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id, {
-      attributes: { exclude: ['password'] },
-      include: [
-        { model: Donor, as: 'donor' },
-        { model: Hospital, as: 'hospital' }
-      ]
-    });
-
+    const user = await User.findById(req.user.id).select('-password');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json(user);
+    // Get role-specific profile
+    let profile = { user };
+
+    if (user.role === 'donor') {
+      profile.donor = await Donor.findOne({ user_id: user._id });
+    } else if (user.role === 'hospital') {
+      profile.hospital = await Hospital.findOne({ user_id: user._id });
+    }
+
+    res.json(profile);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -1,13 +1,15 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { sequelize } = require('./src/database/models');
+const mongoose = require('mongoose');
+const connectDB = require('./src/config/db');
+const ensureAdminUser = require('./src/utils/initAdmin');
 const routes = require('./src/routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Simple middleware
+// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -17,8 +19,8 @@ app.use('/api', routes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     message: 'Blood Donation API is running',
     timestamp: new Date().toISOString()
   });
@@ -55,11 +57,8 @@ app.use((req, res) => {
 // Start server
 const startServer = async () => {
   try {
-    await sequelize.authenticate();
-    console.log('Database connected successfully.');
-
-    await sequelize.sync({ force: false });
-    console.log('Database synchronized.');
+    await connectDB();
+    await ensureAdminUser();
 
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
@@ -74,13 +73,13 @@ const startServer = async () => {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('Shutting down...');
-  await sequelize.close();
+  await mongoose.connection.close();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('Shutting down...');
-  await sequelize.close();
+  await mongoose.connection.close();
   process.exit(0);
 });
 

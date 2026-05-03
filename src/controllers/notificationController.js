@@ -1,4 +1,4 @@
-const { Notification, User } = require('../database/models');
+const Notification = require('../models/Notification');
 
 // Create notification
 const createNotification = async (req, res) => {
@@ -19,15 +19,13 @@ const getUserNotifications = async (req, res) => {
   try {
     const { is_read } = req.query;
 
-    const whereClause = { user_id: req.user.id };
+    const filter = { user_id: req.user.id };
     if (is_read !== undefined) {
-      whereClause.is_read = is_read === 'true';
+      filter.is_read = is_read === 'true';
     }
 
-    const notifications = await Notification.findAll({
-      where: whereClause,
-      order: [['created_at', 'DESC']]
-    });
+    const notifications = await Notification.find(filter)
+      .sort({ created_at: -1 });
 
     res.json(notifications);
   } catch (error) {
@@ -38,19 +36,23 @@ const getUserNotifications = async (req, res) => {
 // Mark notification as read
 const markNotificationAsRead = async (req, res) => {
   try {
-    const notification = await Notification.findByPk(req.params.id);
+    const notification = await Notification.findById(req.params.id);
 
     if (!notification) {
       return res.status(404).json({ message: 'Notification not found' });
     }
 
-    if (notification.user_id !== req.user.id) {
+    if (notification.user_id.toString() !== req.user.id) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    await notification.update({ is_read: true });
+    const updatedNotification = await Notification.findByIdAndUpdate(
+      req.params.id,
+      { is_read: true },
+      { new: true }
+    );
 
-    res.json({ message: 'Notification marked as read', notification });
+    res.json({ message: 'Notification marked as read', notification: updatedNotification });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -59,9 +61,9 @@ const markNotificationAsRead = async (req, res) => {
 // Mark all notifications as read
 const markAllNotificationsAsRead = async (req, res) => {
   try {
-    await Notification.update(
-      { is_read: true },
-      { where: { user_id: req.user.id, is_read: false } }
+    await Notification.updateMany(
+      { user_id: req.user.id, is_read: false },
+      { is_read: true }
     );
 
     res.json({ message: 'All notifications marked as read' });
@@ -73,17 +75,17 @@ const markAllNotificationsAsRead = async (req, res) => {
 // Delete notification
 const deleteNotification = async (req, res) => {
   try {
-    const notification = await Notification.findByPk(req.params.id);
+    const notification = await Notification.findById(req.params.id);
 
     if (!notification) {
       return res.status(404).json({ message: 'Notification not found' });
     }
 
-    if (notification.user_id !== req.user.id) {
+    if (notification.user_id.toString() !== req.user.id) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    await notification.destroy();
+    await Notification.findByIdAndDelete(req.params.id);
 
     res.json({ message: 'Notification deleted successfully' });
   } catch (error) {
@@ -94,8 +96,9 @@ const deleteNotification = async (req, res) => {
 // Get unread notification count
 const getUnreadNotificationCount = async (req, res) => {
   try {
-    const count = await Notification.count({
-      where: { user_id: req.user.id, is_read: false }
+    const count = await Notification.countDocuments({
+      user_id: req.user.id,
+      is_read: false
     });
 
     res.json({ unreadCount: count });

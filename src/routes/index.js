@@ -9,6 +9,7 @@ const bloodRequestRoutes = require('./bloodRequests');
 const donationRoutes = require('./donations');
 const notificationRoutes = require('./notifications');
 const matchRoutes = require('./matches');
+const adminRoutes = require('./admin');
 
 // Use routes
 router.use('/auth', authRoutes);
@@ -18,5 +19,6 @@ router.use('/blood-requests', bloodRequestRoutes);
 router.use('/donations', donationRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/matches', matchRoutes);
+router.use('/admin', adminRoutes);
 
 module.exports = router;

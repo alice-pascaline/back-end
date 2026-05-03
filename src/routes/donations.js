@@ -5,7 +5,8 @@ const {
   getAllDonations,
   getDonationById,
   updateDonation,
-  getDonorDonations
+  getDonorDonations,
+  completeDonation
 } = require('../controllers/donationController');
 const { authenticateToken, authorizeRoles } = require('../middlewares/auth');
 
@@ -14,6 +15,7 @@ router.post('/', authenticateToken, authorizeRoles('donor'), createDonation);
 router.get('/', authenticateToken, getAllDonations);
 router.get('/my-donations', authenticateToken, authorizeRoles('donor'), getDonorDonations);
 router.get('/:id', authenticateToken, getDonationById);
-router.put('/:id', authenticateToken, updateDonation);
+router.put('/:id', authenticateToken, authorizeRoles('hospital'), updateDonation);
+router.put('/:id/complete', authenticateToken, authorizeRoles('hospital'), completeDonation);
 
 module.exports = router;

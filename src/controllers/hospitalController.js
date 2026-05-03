@@ -1,18 +1,12 @@
-const { Hospital, User, BloodRequest, Donation } = require('../database/models');
+const Hospital = require('../models/Hospital');
+const User = require('../models/User');
+const BloodRequest = require('../models/BloodRequest');
+const Donation = require('../models/Donation');
 
 // Get all hospitals
 const getAllHospitals = async (req, res) => {
   try {
-    const hospitals = await Hospital.findAll({
-      include: [
-        {
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name', 'email', 'phone']
-        }
-      ]
-    });
-
+    const hospitals = await Hospital.find().populate('user_id', 'name email phone');
     res.json(hospitals);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -22,20 +16,12 @@ const getAllHospitals = async (req, res) => {
 // Get hospital by ID
 const getHospitalById = async (req, res) => {
   try {
-    const hospital = await Hospital.findByPk(req.params.id, {
-      include: [
-        {
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name', 'email', 'phone']
-        },
-        {
-          model: BloodRequest,
-          as: 'bloodRequests',
-          include: [{ model: Donation, as: 'donations' }]
-        }
-      ]
-    });
+    const hospital = await Hospital.findById(req.params.id)
+      .populate('user_id', 'name email phone')
+      .populate({
+        path: 'bloodRequests',
+        populate: { path: 'donations' }
+      });
 
     if (!hospital) {
       return res.status(404).json({ message: 'Hospital not found' });
@@ -50,15 +36,19 @@ const getHospitalById = async (req, res) => {
 // Update hospital profile
 const updateHospitalProfile = async (req, res) => {
   try {
-    const hospital = await Hospital.findOne({ where: { user_id: req.user.id } });
+    const hospital = await Hospital.findOne({ user_id: req.user.id });
 
     if (!hospital) {
       return res.status(404).json({ message: 'Hospital profile not found' });
     }
 
-    await hospital.update(req.body);
+    const updatedHospital = await Hospital.findByIdAndUpdate(
+      hospital._id,
+      req.body,
+      { new: true }
+    );
 
-    res.json({ message: 'Hospital profile updated successfully', hospital });
+    res.json({ message: 'Hospital profile updated successfully', hospital: updatedHospital });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -67,17 +57,15 @@ const updateHospitalProfile = async (req, res) => {
 // Get hospital blood requests
 const getHospitalBloodRequests = async (req, res) => {
   try {
-    const hospital = await Hospital.findOne({ where: { user_id: req.user.id } });
+    const hospital = await Hospital.findOne({ user_id: req.user.id });
 
     if (!hospital) {
       return res.status(404).json({ message: 'Hospital profile not found' });
     }
 
-    const bloodRequests = await BloodRequest.findAll({
-      where: { hospital_id: hospital.id },
-      include: [{ model: Donation, as: 'donations' }],
-      order: [['request_date', 'DESC']]
-    });
+    const bloodRequests = await BloodRequest.find({ hospital_id: hospital._id })
+      .populate('donations')
+      .sort({ request_date: -1 });
 
     res.json(bloodRequests);
   } catch (error) {

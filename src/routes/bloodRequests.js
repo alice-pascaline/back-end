@@ -13,7 +13,7 @@ const { authenticateToken, authorizeRoles } = require('../middlewares/auth');
 router.post('/', authenticateToken, authorizeRoles('hospital'), createBloodRequest);
 router.get('/', authenticateToken, getAllBloodRequests);
 router.get('/:id', authenticateToken, getBloodRequestById);
-router.put('/:id', authenticateToken, updateBloodRequest);
-router.delete('/:id', authenticateToken, deleteBloodRequest);
+router.put('/:id', authenticateToken, authorizeRoles('hospital', 'admin'), updateBloodRequest);
+router.delete('/:id', authenticateToken, authorizeRoles('hospital', 'admin'), deleteBloodRequest);
 
 module.exports = router;
