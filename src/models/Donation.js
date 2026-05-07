@@ -1,28 +1,31 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/db');
 
-const DonationSchema = new mongoose.Schema({
+const Donation = sequelize.define('Donation', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   donor_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Donor',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false
   },
   request_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'BloodRequest',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false
   },
   status: {
-    type: String,
-    enum: ['pending', 'accepted', 'rejected', 'completed'],
-    default: 'pending'
+    type: DataTypes.ENUM('pending', 'accepted', 'rejected', 'completed'),
+    defaultValue: 'pending'
   },
   donation_date: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
   }
 }, {
+  tableName: 'donations',
   timestamps: false
 });
 
-// Prevent model overwrite in development
-module.exports = mongoose.models.Donation || mongoose.model('Donation', DonationSchema);
+module.exports = Donation;

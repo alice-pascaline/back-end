@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+const { sequelize } = require('../config/db');
 
 const User = require('./User');
 const Donor = require('./Donor');
@@ -8,21 +8,50 @@ const Donation = require('./Donation');
 const Notification = require('./Notification');
 const Match = require('./Match');
 
-// Prevent model overwrite issues in development with hot reload
-if (!mongoose.models.User) mongoose.model('User', User.schema || User.schema);
-if (!mongoose.models.Donor) mongoose.model('Donor', Donor.schema || Donor.schema);
-if (!mongoose.models.Hospital) mongoose.model('Hospital', Hospital.schema || Hospital.schema);
-if (!mongoose.models.BloodRequest) mongoose.model('BloodRequest', BloodRequest.schema || BloodRequest.schema);
-if (!mongoose.models.Donation) mongoose.model('Donation', Donation.schema || Donation.schema);
-if (!mongoose.models.Notification) mongoose.model('Notification', Notification.schema || Notification.schema);
-if (!mongoose.models.Match) mongoose.model('Match', Match.schema || Match.schema);
+// Setup all associations
+const setupAssociations = () => {
+  // User associations
+  User.hasOne(Donor, { foreignKey: 'user_id' });
+  User.hasOne(Hospital, { foreignKey: 'user_id' });
+  User.hasMany(Notification, { foreignKey: 'user_id' });
+
+  // Donor associations
+  Donor.belongsTo(User, { foreignKey: 'user_id' });
+  Donor.hasMany(Donation, { foreignKey: 'donor_id' });
+  Donor.hasMany(Match, { foreignKey: 'donor_id' });
+
+  // Hospital associations
+  Hospital.belongsTo(User, { foreignKey: 'user_id' });
+  Hospital.hasMany(BloodRequest, { foreignKey: 'hospital_id' });
+
+  // BloodRequest associations
+  BloodRequest.belongsTo(Hospital, { foreignKey: 'hospital_id' });
+  BloodRequest.hasMany(Donation, { foreignKey: 'request_id' });
+  BloodRequest.hasMany(Match, { foreignKey: 'request_id' });
+
+  // Donation associations
+  Donation.belongsTo(Donor, { foreignKey: 'donor_id' });
+  Donation.belongsTo(BloodRequest, { foreignKey: 'request_id' });
+
+  // Match associations
+  Match.belongsTo(Donor, { foreignKey: 'donor_id' });
+  Match.belongsTo(BloodRequest, { foreignKey: 'request_id' });
+
+  // Notification associations
+  Notification.belongsTo(User, { foreignKey: 'user_id' });
+};
+
+// Setup associations
+setupAssociations();
 
 module.exports = {
+  sequelize,
   User,
   Donor,
   Hospital,
   BloodRequest,
   Donation,
   Notification,
-  Match
+  Match,
+  setupAssociations
 };

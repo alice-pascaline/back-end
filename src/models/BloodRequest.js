@@ -1,47 +1,43 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/db');
 
-const BloodRequestSchema = new mongoose.Schema({
+const BloodRequest = sequelize.define('BloodRequest', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   hospital_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Hospital',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false
   },
-  patient_name: String,
+  patient_name: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   blood_type: {
-    type: String,
-    enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+    type: DataTypes.ENUM('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'),
+    allowNull: false
   },
-  quantity: Number,
+  quantity: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   urgency_level: {
-    type: String,
-    enum: ['low', 'medium', 'high']
+    type: DataTypes.ENUM('low', 'medium', 'high'),
+    allowNull: false
   },
   status: {
-    type: String,
-    enum: ['pending', 'approved', 'fulfilled', 'cancelled'],
-    default: 'pending'
+    type: DataTypes.ENUM('pending', 'approved', 'fulfilled', 'cancelled'),
+    defaultValue: 'pending'
   },
   request_date: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
   }
 }, {
-  timestamps: false,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  tableName: 'blood_requests',
+  timestamps: false
 });
 
-BloodRequestSchema.virtual('matches', {
-  ref: 'Match',
-  localField: '_id',
-  foreignField: 'request_id'
-});
-
-BloodRequestSchema.virtual('donations', {
-  ref: 'Donation',
-  localField: '_id',
-  foreignField: 'request_id'
-});
-
-// Prevent model overwrite in development
-module.exports = mongoose.models.BloodRequest || mongoose.model('BloodRequest', BloodRequestSchema);
+module.exports = BloodRequest;

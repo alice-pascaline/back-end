@@ -1,5 +1,5 @@
 const bcrypt = require('bcrypt');
-const User = require('../models/User');
+const { User } = require('../models');
 
 const ensureAdminUser = async () => {
   try {
@@ -7,7 +7,7 @@ const ensureAdminUser = async () => {
     const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@2026!';
     const adminName = process.env.ADMIN_NAME || 'System Administrator';
 
-    const existingAdmin = await User.findOne({ role: 'admin', email: adminEmail });
+    const existingAdmin = await User.findOne({ where: { role: 'admin', email: adminEmail } });
     if (existingAdmin) {
       console.log(`Admin already exists: ${adminEmail}`);
       return;

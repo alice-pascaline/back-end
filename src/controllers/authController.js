@@ -1,13 +1,11 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const Donor = require('../models/Donor');
-const Hospital = require('../models/Hospital');
+const { User, Donor, Hospital } = require('../models');
 
 // Simple token generator
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user._id, email: user.email, role: user.role },
+    { id: user.id, email: user.email, role: user.role },
     process.env.JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -31,7 +29,7 @@ const register = async (req, res) => {
     }
 
     // Check if user exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -50,20 +48,20 @@ const register = async (req, res) => {
 
     // Create role profile
     if (role === 'donor') {
-      await Donor.create({ user_id: user._id, ...additionalData });
+      await Donor.create({ user_id: user.id, ...additionalData });
     } else if (role === 'hospital') {
-      await Hospital.create({ user_id: user._id, ...additionalData });
+      await Hospital.create({ user_id: user.id, ...additionalData });
     }
 
     const token = generateToken(user);
 
     // Get role-specific profile
-    const userData = { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone };
+    const userData = { id: user.id, name: user.name, email: user.email, role: user.role, phone: user.phone };
 
     if (role === 'donor') {
-      userData.Donor = await Donor.findOne({ user_id: user._id });
+      userData.Donor = await Donor.findOne({ where: { user_id: user.id } });
     } else if (role === 'hospital') {
-      userData.Hospital = await Hospital.findOne({ user_id: user._id });
+      userData.Hospital = await Hospital.findOne({ where: { user_id: user.id } });
     }
 
     res.status(201).json({
@@ -82,7 +80,7 @@ const login = async (req, res) => {
     const { email, password } = req.body;
 
     // Find user
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ where: { email } });
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -96,12 +94,12 @@ const login = async (req, res) => {
     const token = generateToken(user);
 
     // Get role-specific profile
-    const userData = { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone };
+    const userData = { id: user.id, name: user.name, email: user.email, role: user.role, phone: user.phone };
 
     if (user.role === 'donor') {
-      userData.Donor = await Donor.findOne({ user_id: user._id });
+      userData.Donor = await Donor.findOne({ where: { user_id: user.id } });
     } else if (user.role === 'hospital') {
-      userData.Hospital = await Hospital.findOne({ user_id: user._id });
+      userData.Hospital = await Hospital.findOne({ where: { user_id: user.id } });
     }
 
     res.json({
@@ -117,7 +115,9 @@ const login = async (req, res) => {
 // Get user profile
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password'] }
+    });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -126,9 +126,9 @@ const getProfile = async (req, res) => {
     let profile = { user };
 
     if (user.role === 'donor') {
-      profile.donor = await Donor.findOne({ user_id: user._id });
+      profile.donor = await Donor.findOne({ where: { user_id: user.id } });
     } else if (user.role === 'hospital') {
-      profile.hospital = await Hospital.findOne({ user_id: user._id });
+      profile.hospital = await Hospital.findOne({ where: { user_id: user.id } });
     }
 
     res.json(profile);

@@ -1,8 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
-const connectDB = require('./src/config/db');
+const { connectDB } = require('./src/config/db');
 const ensureAdminUser = require('./src/utils/initAdmin');
 const routes = require('./src/routes');
 
@@ -71,15 +70,17 @@ const startServer = async () => {
 };
 
 // Graceful shutdown
+const { sequelize } = require('./src/config/db');
+
 process.on('SIGTERM', async () => {
   console.log('Shutting down...');
-  await mongoose.connection.close();
+  await sequelize.close();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('Shutting down...');
-  await mongoose.connection.close();
+  await sequelize.close();
   process.exit(0);
 });
 
