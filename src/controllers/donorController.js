@@ -9,8 +9,8 @@ const { getCompatibleDonorTypes, getCompatibleRequestTypes } = require('../utils
 // Get donor profile (current user)
 const getDonorProfile = async (req, res) => {
   try {
-    const donor = await Donor.findOne({ user_id: req.user.id })
-      .populate('user_id', 'name email phone');
+    const donor = await Donor.findOne({ where: { user_id: req.user.id } })
+      .populate({ model: User, as: 'user', attributes: ['name', 'email', 'phone'] });
 
     if (!donor) {
       return res.status(404).json({ message: 'Donor profile not found' });
@@ -25,8 +25,9 @@ const getDonorProfile = async (req, res) => {
 // Get all donors
 const getAllDonors = async (req, res) => {
   try {
-    const donors = await Donor.find()
-      .populate('user_id', 'name email phone');
+    const donors = await Donor.findAll({
+      include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone'] }]
+    });
 
     res.json(donors);
   } catch (error) {
