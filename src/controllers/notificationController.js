@@ -24,8 +24,10 @@ const getUserNotifications = async (req, res) => {
       filter.is_read = is_read === 'true';
     }
 
-    const notifications = await Notification.find(filter)
-      .sort({ created_at: -1 });
+    const notifications = await Notification.findAll({
+      where: filter,
+      order: [['created_at', 'DESC']]
+    });
 
     res.json(notifications);
   } catch (error) {
@@ -36,7 +38,7 @@ const getUserNotifications = async (req, res) => {
 // Mark notification as read
 const markNotificationAsRead = async (req, res) => {
   try {
-    const notification = await Notification.findById(req.params.id);
+    const notification = await Notification.findByPk(req.params.id);
 
     if (!notification) {
       return res.status(404).json({ message: 'Notification not found' });
@@ -46,13 +48,12 @@ const markNotificationAsRead = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    const updatedNotification = await Notification.findByIdAndUpdate(
-      req.params.id,
+    const [updatedNotification] = await Notification.update(
       { is_read: true },
-      { new: true }
+      { where: { id: req.params.id }, returning: true }
     );
 
-    res.json({ message: 'Notification marked as read', notification: updatedNotification });
+    res.json({ message: 'Notification marked as read', notification: updatedNotification[0] });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -85,7 +86,7 @@ const deleteNotification = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    await Notification.findByIdAndDelete(req.params.id);
+    await Notification.destroy({ where: { id: req.params.id } });
 
     res.json({ message: 'Notification deleted successfully' });
   } catch (error) {
@@ -96,9 +97,11 @@ const deleteNotification = async (req, res) => {
 // Get unread notification count
 const getUnreadNotificationCount = async (req, res) => {
   try {
-    const count = await Notification.countDocuments({
-      user_id: req.user.id,
-      is_read: false
+    const count = await Notification.count({
+      where: {
+        user_id: req.user.id,
+        is_read: false
+      }
     });
 
     res.json({ unreadCount: count });
