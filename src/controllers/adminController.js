@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const User = require('../models/User');
 const Donor = require('../models/Donor');
 const Hospital = require('../models/Hospital');
@@ -22,31 +23,36 @@ const getDashboardStats = async (req, res) => {
       totalMatches,
       unreadNotifications
     ] = await Promise.all([
-      User.countDocuments(),
-      Donor.countDocuments(),
-      Hospital.countDocuments(),
-      BloodRequest.countDocuments(),
-      BloodRequest.countDocuments({ status: 'pending' }),
-      BloodRequest.countDocuments({ status: 'fulfilled' }),
-      Donation.countDocuments(),
-      Donation.countDocuments({ status: 'completed' }),
-      Match.countDocuments(),
-      Notification.countDocuments({ is_read: false })
+      User.count(),
+      Donor.count(),
+      Hospital.count(),
+      BloodRequest.count(),
+      BloodRequest.count({ where: { status: 'pending' } }),
+      BloodRequest.count({ where: { status: 'fulfilled' } }),
+      Donation.count(),
+      Donation.count({ where: { status: 'completed' } }),
+      Match.count(),
+      Notification.count({ where: { is_read: false } })
     ]);
 
     // Get recent activity
-    const recentDonors = await Donor.find()
-      .populate('user_id', 'name email created_at')
-      .sort({ _id: -1 })
-      .limit(5);
+    const recentDonors = await Donor.findAll({
+      include: [{ model: User, as: 'user', attributes: ['name', 'email', 'created_at'] }],
+      order: [['id', 'DESC']],
+      limit: 5
+    });
 
-    const recentRequests = await BloodRequest.find()
-      .populate({
-        path: 'hospital_id',
-        populate: { path: 'user_id', select: 'name' }
-      })
-      .sort({ request_date: -1 })
-      .limit(5);
+    const recentRequests = await BloodRequest.findAll({
+      include: [
+        {
+          model: Hospital,
+          as: 'hospital',
+          include: [{ model: User, as: 'user', attributes: ['name'] }]
+        }
+      ],
+      order: [['request_date', 'DESC']],
+      limit: 5
+    });
 
     res.json({
       stats: {
@@ -76,15 +82,19 @@ const getAllUsers = async (req, res) => {
   try {
     const { role, search } = req.query;
 
-    const filter = {};
-    if (role) filter.role = role;
-    if (search) filter.name = { $regex: search, $options: 'i' };
+    const whereClause = {};
+    if (role) whereClause.role = role;
+    if (search) whereClause.name = { [Op.iLike]: `%${search}%` };
 
-    const users = await User.find(filter)
-      .select('-password')
-      .populate('donor')
-      .populate('hospital')
-      .sort({ created_at: -1 });
+    const users = await User.findAll({
+      where: whereClause,
+      attributes: { exclude: ['password'] },
+      include: [
+        { model: Donor, as: 'donor' },
+        { model: Hospital, as: 'hospital' }
+      ],
+      order: [['created_at', 'DESC']]
+    });
 
     res.json(users);
   } catch (error) {
@@ -130,14 +140,16 @@ const deleteUser = async (req, res) => {
 const getAllDonorsAdmin = async (req, res) => {
   try {
     const { blood_type, available } = req.query;
-    const filter = {};
+    const whereClause = {};
 
-    if (blood_type) filter.blood_type = blood_type;
-    if (available !== undefined) filter.availability_status = available === 'true';
+    if (blood_type) whereClause.blood_type = blood_type;
+    if (available !== undefined) whereClause.availability_status = available === 'true';
 
-    const donors = await Donor.find(filter)
-      .populate('user_id', 'name email phone is_active')
-      .sort({ _id: -1 });
+    const donors = await Donor.findAll({
+      where: whereClause,
+      include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone', 'is_active'] }],
+      order: [['id', 'DESC']]
+    });
 
     res.json(donors);
   } catch (error) {
@@ -147,17 +159,16 @@ const getAllDonorsAdmin = async (req, res) => {
 
 const updateDonorAdmin = async (req, res) => {
   try {
-    const donor = await Donor.findByIdAndUpdate(
-      req.params.id,
+    const donor = await Donor.update(
       req.body,
-      { new: true }
+      { where: { id: req.params.id }, returning: true }
     );
 
-    if (!donor) {
+    if (!donor[0]) {
       return res.status(404).json({ message: 'Donor not found' });
     }
 
-    res.json({ message: 'Donor updated successfully', donor });
+    res.json({ message: 'Donor updated successfully', donor: donor[1][0] });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -166,9 +177,10 @@ const updateDonorAdmin = async (req, res) => {
 // Hospital Management
 const getAllHospitalsAdmin = async (req, res) => {
   try {
-    const hospitals = await Hospital.find()
-      .populate('user_id', 'name email phone is_active')
-      .sort({ _id: -1 });
+    const hospitals = await Hospital.findAll({
+      include: [{ model: User, as: 'user', attributes: ['name', 'email', 'phone', 'is_active'] }],
+      order: [['id', 'DESC']]
+    });
 
     res.json(hospitals);
   } catch (error) {
@@ -178,17 +190,16 @@ const getAllHospitalsAdmin = async (req, res) => {
 
 const updateHospitalAdmin = async (req, res) => {
   try {
-    const hospital = await Hospital.findByIdAndUpdate(
-      req.params.id,
+    const hospital = await Hospital.update(
       req.body,
-      { new: true }
+      { where: { id: req.params.id }, returning: true }
     );
 
-    if (!hospital) {
+    if (!hospital[0]) {
       return res.status(404).json({ message: 'Hospital not found' });
     }
 
-    res.json({ message: 'Hospital updated successfully', hospital });
+    res.json({ message: 'Hospital updated successfully', hospital: hospital[1][0] });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -198,18 +209,23 @@ const updateHospitalAdmin = async (req, res) => {
 const getAllRequestsAdmin = async (req, res) => {
   try {
     const { status, urgency_level } = req.query;
-    const filter = {};
+    const whereClause = {};
 
-    if (status) filter.status = status;
-    if (urgency_level) filter.urgency_level = urgency_level;
+    if (status) whereClause.status = status;
+    if (urgency_level) whereClause.urgency_level = urgency_level;
 
-    const requests = await BloodRequest.find(filter)
-      .populate({
-        path: 'hospital_id',
-        populate: { path: 'user_id', select: 'name' }
-      })
-      .populate('matches')
-      .sort({ request_date: -1 });
+    const requests = await BloodRequest.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: Hospital,
+          as: 'hospital',
+          include: [{ model: User, as: 'user', attributes: ['name'] }]
+        },
+        { model: Match, as: 'matches' }
+      ],
+      order: [['request_date', 'DESC']]
+    });
 
     res.json(requests);
   } catch (error) {
@@ -219,17 +235,16 @@ const getAllRequestsAdmin = async (req, res) => {
 
 const updateRequestAdmin = async (req, res) => {
   try {
-    const request = await BloodRequest.findByIdAndUpdate(
-      req.params.id,
+    const [updatedRowsCount] = await BloodRequest.update(
       req.body,
-      { new: true }
+      { where: { id: req.params.id }, returning: true }
     );
 
-    if (!request) {
+    if (updatedRowsCount === 0) {
       return res.status(404).json({ message: 'Request not found' });
     }
 
-    res.json({ message: 'Request updated successfully', request });
+    res.json({ message: 'Request updated successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -237,9 +252,9 @@ const updateRequestAdmin = async (req, res) => {
 
 const deleteRequestAdmin = async (req, res) => {
   try {
-    const request = await BloodRequest.findByIdAndDelete(req.params.id);
+    const deletedRowsCount = await BloodRequest.destroy({ where: { id: req.params.id } });
 
-    if (!request) {
+    if (deletedRowsCount === 0) {
       return res.status(404).json({ message: 'Request not found' });
     }
 
@@ -253,17 +268,22 @@ const deleteRequestAdmin = async (req, res) => {
 const getAllDonationsAdmin = async (req, res) => {
   try {
     const { status } = req.query;
-    const filter = {};
+    const whereClause = {};
 
-    if (status) filter.status = status;
+    if (status) whereClause.status = status;
 
-    const donations = await Donation.find(filter)
-      .populate({
-        path: 'donor_id',
-        populate: { path: 'user_id', select: 'name' }
-      })
-      .populate('request_id')
-      .sort({ donation_date: -1 });
+    const donations = await Donation.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: Donor,
+          as: 'donor',
+          include: [{ model: User, as: 'user', attributes: ['name'] }]
+        },
+        { model: BloodRequest, as: 'request' }
+      ],
+      order: [['donation_date', 'DESC']]
+    });
 
     res.json(donations);
   } catch (error) {
