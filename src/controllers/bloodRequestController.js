@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const BloodRequest = require('../models/BloodRequest');
 const Hospital = require('../models/Hospital');
 const User = require('../models/User');
@@ -9,7 +10,7 @@ const { getCompatibleDonorTypes, getCompatibleRequestTypes } = require('../utils
 // Create blood request
 const createBloodRequest = async (req, res) => {
   try {
-    const hospital = await Hospital.findOne({ user_id: req.user.id });
+    const hospital = await Hospital.findOne({ where: { user_id: req.user.id } });
 
     if (!hospital) {
       return res.status(404).json({ message: 'Hospital profile not found' });
@@ -21,20 +22,22 @@ const createBloodRequest = async (req, res) => {
     });
 
     // Find matching donors using compatibility rules
-    const matchingDonors = await Donor.find({
-      blood_type: { $in: getCompatibleDonorTypes(req.body.blood_type) },
-      availability_status: true
+    const matchingDonors = await Donor.findAll({
+      where: {
+        blood_type: { [Op.in]: getCompatibleDonorTypes(req.body.blood_type) },
+        availability_status: true
+      }
     });
 
     // Create matches for suggested donors
     const matches = matchingDonors.map(donor => ({
-      donor_id: donor._id,
-      request_id: bloodRequest._id,
+      donor_id: donor.id,
+      request_id: bloodRequest.id,
       match_status: 'suggested'
     }));
 
     if (matches.length > 0) {
-      await Match.insertMany(matches);
+      await Match.bulkCreate(matches);
     }
 
     res.status(201).json({
@@ -60,13 +63,18 @@ const getAllBloodRequests = async (req, res) => {
       filter.blood_type = { $in: getCompatibleRequestTypes(compatible_with) };
     }
 
-    const bloodRequests = await BloodRequest.find(filter)
-      .populate({
-        path: 'hospital_id',
-        populate: { path: 'user_id', select: 'name email' }
-      })
-      .populate('donations')
-      .sort({ request_date: -1 });
+    const bloodRequests = await BloodRequest.findAll({
+      where: filter,
+      include: [
+        {
+          model: Hospital,
+          as: 'hospital',
+          include: [{ model: User, as: 'user', attributes: ['name', 'email'] }]
+        },
+        { model: Donation, as: 'donations' }
+      ],
+      order: [['request_date', 'DESC']]
+    });
 
     res.json(bloodRequests);
   } catch (error) {
@@ -77,25 +85,25 @@ const getAllBloodRequests = async (req, res) => {
 // Get blood request by ID
 const getBloodRequestById = async (req, res) => {
   try {
-    const bloodRequest = await BloodRequest.findById(req.params.id)
-      .populate({
-        path: 'hospital_id',
-        populate: { path: 'user_id', select: 'name email' }
-      })
-      .populate({
-        path: 'donations',
-        populate: {
-          path: 'donor_id',
-          populate: { path: 'user_id', select: 'name email' }
+    const bloodRequest = await BloodRequest.findByPk(req.params.id, {
+      include: [
+        { model: Hospital, as: 'hospital', include: [{ model: User, as: 'user', attributes: ['name', 'email'] }] },
+        { 
+          model: Donation, 
+          as: 'Donations',
+          include: [
+            { model: Donor, as: 'donor', include: [{ model: User, as: 'user', attributes: ['name', 'email'] }] }
+          ]
+        },
+        { 
+          model: Match, 
+          as: 'matches',
+          include: [
+            { model: Donor, as: 'donor', include: [{ model: User, as: 'user', attributes: ['name', 'email'] }] }
+          ]
         }
-      })
-      .populate({
-        path: 'matches',
-        populate: {
-          path: 'donor_id',
-          populate: { path: 'user_id', select: 'name email' }
-        }
-      });
+      ]
+    });
 
     if (!bloodRequest) {
       return res.status(404).json({ message: 'Blood request not found' });
