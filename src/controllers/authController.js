@@ -93,7 +93,9 @@ const login = async (req, res) => {
 
     const token = generateToken(user);
 
+
     // Get role-specific profile
+
     const userData = { id: user.id, name: user.name, email: user.email, role: user.role, phone: user.phone };
 
     if (user.role === 'donor') {

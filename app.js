@@ -60,7 +60,7 @@ const startServer = async () => {
     await ensureAdminUser();
 
     app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+      console.log(`Server running on port http://localhost:${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/health`);
     });
   } catch (error) {
