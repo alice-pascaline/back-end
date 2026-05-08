@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const Donation = require('../models/Donation');
 const Donor = require('../models/Donor');
 const BloodRequest = require('../models/BloodRequest');
@@ -22,7 +23,7 @@ const bloodTypeCompatibility = {
 // Create donation
 const createDonation = async (req, res) => {
   try {
-    const donor = await Donor.findOne({ user_id: req.user.id });
+    const donor = await Donor.findOne({ where: { user_id: req.user.id } });
 
     if (!donor) {
       return res.status(404).json({ message: 'Donor profile not found' });
@@ -35,9 +36,14 @@ const createDonation = async (req, res) => {
     }
 
     // Check if blood request exists and is pending
-    const bloodRequest = await BloodRequest.findById(request_id).populate({
-      path: 'hospital_id',
-      populate: { path: 'user_id' }
+    const bloodRequest = await BloodRequest.findByPk(request_id, {
+      include: [
+        {
+          model: Hospital,
+          as: 'hospital',
+          include: [{ model: User, as: 'user' }]
+        }
+      ]
     });
 
     if (!bloodRequest) {
@@ -56,26 +62,26 @@ const createDonation = async (req, res) => {
 
     // Create donation
     const donation = await Donation.create({
-      donor_id: donor._id,
+      donor_id: donor.id,
       request_id: request_id,
       status: 'accepted'
     });
 
     // Update donor's last donation date
-    await Donor.findByIdAndUpdate(donor._id, { last_donation_date: new Date() });
+    await Donor.update({ last_donation_date: new Date() }, { where: { id: donor.id } });
 
     // Update match status to accepted if match exists
-    await Match.findOneAndUpdate(
-      { donor_id: donor._id, request_id: request_id },
-      { match_status: 'accepted' }
+    await Match.update(
+      { match_status: 'accepted' },
+      { where: { donor_id: donor.id, request_id: request_id } }
     );
 
     // Update blood request status to approved
-    await BloodRequest.findByIdAndUpdate(request_id, { status: 'approved' });
+    await BloodRequest.update({ status: 'approved' }, { where: { id: request_id } });
 
     // Create notification for hospital
     await Notification.create({
-      user_id: bloodRequest.hospital_id.user_id._id,
+      user_id: bloodRequest.hospital.user.id,
       message: `${donor.user_id?.name || 'A donor'} has confirmed a donation for your ${bloodRequest.blood_type} request.`,
       type: 'approval'
     });
@@ -94,22 +100,31 @@ const getAllDonations = async (req, res) => {
   try {
     const { status } = req.query;
 
-    const filter = {};
-    if (status) filter.status = status;
+    const whereClause = {};
+    if (status) whereClause.status = status;
 
-    const donations = await Donation.find(filter)
-      .populate({
-        path: 'donor_id',
-        populate: { path: 'user_id', select: 'name email' }
-      })
-      .populate({
-        path: 'request_id',
-        populate: {
-          path: 'hospital_id',
-          populate: { path: 'user_id', select: 'name email' }
+    const donations = await Donation.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: Donor,
+          as: 'donor',
+          include: [{ model: User, as: 'user', attributes: ['name', 'email'] }]
+        },
+        {
+          model: BloodRequest,
+          as: 'request',
+          include: [
+            {
+              model: Hospital,
+              as: 'hospital',
+              include: [{ model: User, as: 'user', attributes: ['name', 'email'] }]
+            }
+          ]
         }
-      })
-      .sort({ donation_date: -1 });
+      ],
+      order: [['donation_date', 'DESC']]
+    });
 
     res.json(donations);
   } catch (error) {
@@ -120,7 +135,7 @@ const getAllDonations = async (req, res) => {
 // Get donation by ID
 const getDonationById = async (req, res) => {
   try {
-    const donation = await Donation.findById(req.params.id)
+    const donation = await Donation.findByPk(req.params.id)
       .populate({
         path: 'donor_id',
         populate: { path: 'user_id', select: 'name email phone' }
@@ -146,7 +161,7 @@ const getDonationById = async (req, res) => {
 // Update donation
 const updateDonation = async (req, res) => {
   try {
-    const donation = await Donation.findById(req.params.id).populate({
+    const donation = await Donation.findByPk(req.params.id).populate({
       path: 'request_id',
       populate: { path: 'hospital_id', populate: { path: 'user_id' } }
     });
@@ -166,14 +181,17 @@ const updateDonation = async (req, res) => {
       updates.status = req.body.status;
     }
 
-    const updatedDonation = await Donation.findByIdAndUpdate(req.params.id, updates, { new: true });
+    const updatedDonation = await Donation.update(req.body, { 
+      where: { id: req.params.id }, 
+      returning: true 
+    });
 
     if (!updatedDonation) {
       return res.status(404).json({ message: 'Donation not found' });
     }
 
     if (updates.status === 'completed') {
-      await BloodRequest.findByIdAndUpdate(donation.request_id._id, { status: 'fulfilled' });
+      await BloodRequest.update({ status: 'fulfilled' }, { where: { id: donation.request_id } });
       await Notification.create({
         user_id: donation.donor_id,
         message: `Your donation to ${donation.request_id.blood_type} blood request has been marked as completed.`,
@@ -196,15 +214,23 @@ const getDonorDonations = async (req, res) => {
       return res.status(404).json({ message: 'Donor profile not found' });
     }
 
-    const donations = await Donation.find({ donor_id: donor._id })
-      .populate({
-        path: 'request_id',
-        populate: {
-          path: 'hospital_id',
-          populate: { path: 'user_id', select: 'name email' }
+    const donations = await Donation.findAll({ 
+      where: { donor_id: donor.id },
+      include: [
+        {
+          model: BloodRequest,
+          as: 'request',
+          include: [
+            {
+              model: Hospital,
+              as: 'hospital',
+              include: [{ model: User, as: 'user', attributes: ['name', 'email'] }]
+            }
+          ]
         }
-      })
-      .sort({ donation_date: -1 });
+      ],
+      order: [['donation_date', 'DESC']]
+    });
 
     res.json(donations);
   } catch (error) {
@@ -214,34 +240,46 @@ const getDonorDonations = async (req, res) => {
 
 const completeDonation = async (req, res) => {
   try {
-    const donation = await Donation.findById(req.params.id)
-      .populate({
-        path: 'request_id',
-        populate: { path: 'hospital_id', populate: { path: 'user_id' } }
-      })
-      .populate({
-        path: 'donor_id',
-        populate: { path: 'user_id', select: 'name email' }
-      });
+    const donation = await Donation.findByPk(req.params.id, {
+      include: [
+        {
+          model: BloodRequest,
+          as: 'request',
+          include: [
+            {
+              model: Hospital,
+              as: 'hospital',
+              include: [{ model: User, as: 'user' }]
+            }
+          ]
+        },
+        {
+          model: Donor,
+          as: 'donor',
+          include: [{ model: User, as: 'user', attributes: ['name', 'email'] }]
+        }
+      ]
+    });
 
     if (!donation) {
       return res.status(404).json({ message: 'Donation not found' });
     }
 
-    const hospital = await Hospital.findOne({ user_id: req.user.id });
-    if (!hospital || donation.request_id.hospital_id._id.toString() !== hospital._id.toString()) {
+    const hospital = await Hospital.findOne({ where: { user_id: req.user.id } });
+    if (!hospital || donation.request.hospital.id !== hospital.id) {
       return res.status(403).json({ message: 'Not authorized to complete this donation' });
     }
 
-    donation.status = 'completed';
-    donation.donation_date = new Date();
-    await donation.save();
+    await Donation.update(
+      { status: 'completed', donation_date: new Date() },
+      { where: { id: req.params.id } }
+    );
 
-    await BloodRequest.findByIdAndUpdate(donation.request_id._id, { status: 'fulfilled' });
+    await BloodRequest.update({ status: 'fulfilled' }, { where: { id: donation.request_id } });
 
     await Notification.create({
-      user_id: donation.donor_id.user_id._id,
-      message: `Your donation for request ${donation.request_id.blood_type} was completed by the hospital.`,
+      user_id: donation.donor.user.id,
+      message: `Your donation for request ${donation.request.blood_type} was completed by hospital.`,
       type: 'completion'
     });
 
