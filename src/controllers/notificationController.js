@@ -97,6 +97,8 @@ const deleteNotification = async (req, res) => {
 // Get unread notification count
 const getUnreadNotificationCount = async (req, res) => {
   try {
+    console.log('Getting unread count for user:', req.user?.id);
+    
     const count = await Notification.count({
       where: {
         user_id: req.user.id,
@@ -104,8 +106,10 @@ const getUnreadNotificationCount = async (req, res) => {
       }
     });
 
+    console.log('Unread count found:', count);
     res.json({ unreadCount: count });
   } catch (error) {
+    console.error('Error in getUnreadNotificationCount:', error);
     res.status(500).json({ message: error.message });
   }
 };
